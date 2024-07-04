@@ -1,0 +1,1 @@
+icacls "%CD%\terra-chatapp-key.pem" /inheritance:r /grant "%USERNAME%":F
