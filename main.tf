@@ -7,7 +7,7 @@ resource "aws_vpc" "terra_vpc" {
   instance_tenancy = "default"
 
   tags = {
-    Name = "terra-vpc"
+    Name = "${var.environment}-vpc"
   }
 }
 
@@ -20,7 +20,7 @@ resource "aws_subnet" "public" {
   map_public_ip_on_launch = true
 
   tags = {
-    Name = "terra-public-subnet-0${tonumber(each.key) + 1}"
+    Name = "${var.environment}-public-subnet-0${tonumber(each.key) + 1}"
   }
 }
 
@@ -32,7 +32,7 @@ resource "aws_subnet" "private" {
   availability_zone = element(data.aws_availability_zones.available.names, length(data.aws_availability_zones.available.names) - var.private_subnet_count + tonumber(each.key))
 
   tags = {
-    Name = "terra-private-subnet-0${tonumber(each.key) + 1}"
+    Name = "${var.environment}-private-subnet-0${tonumber(each.key) + 1}"
   }
 }
 
@@ -40,7 +40,7 @@ resource "aws_internet_gateway" "gw" {
   vpc_id = aws_vpc.terra_vpc.id
 
   tags = {
-    Name = "terra-igw"
+    Name = "${var.environment}-igw"
   }
 }
 
@@ -53,7 +53,7 @@ resource "aws_route_table" "public" {
   }
 
   tags = {
-    Name = "terra-public-route-table"
+    Name = "${var.environment}-public-route-table"
   }
 }
 
@@ -68,7 +68,7 @@ resource "aws_eip" "nat_eip" {
   domain = "vpc"
 
   tags = {
-    Name = "nat-eip"
+    Name = "${var.environment}-nat-eip"
   }
 }
 
@@ -77,7 +77,7 @@ resource "aws_nat_gateway" "ngw" {
   subnet_id     = aws_subnet.public[0].id
 
   tags = {
-    Name = "terra-ngw"
+    Name = "${var.environment}-ngw"
   }
 }
 
@@ -90,7 +90,7 @@ resource "aws_route_table" "private" {
   }
 
   tags = {
-    Name = "terra-private-route-table"
+    Name = "${var.environment}-private-route-table"
   }
 }
 
@@ -128,7 +128,7 @@ resource "aws_security_group" "frontend" {
   }
 
   tags = {
-    Name = "terra-frontend-web-sg"
+    Name = "${var.environment}-frontend-web-sg"
   }
 }
 
@@ -162,7 +162,7 @@ resource "aws_security_group" "backend" {
   }
 
   tags = {
-    Name = "terra-backend-sg"
+    Name = "${var.environment}-backend-sg"
   }
 }
 
@@ -176,16 +176,6 @@ resource "aws_security_group" "database" {
     to_port     = 22
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  dynamic "ingress" {
-    for_each = aws_subnet.public
-    content {
-      from_port = 3306
-      to_port = 3306
-      protocol = "tcp"
-      cidr_blocks = [ingress.value.cidr_block]
-    }
   }
 
   dynamic "ingress" {
@@ -206,7 +196,7 @@ resource "aws_security_group" "database" {
   }
 
   tags = {
-    Name = "terra-database-sg"
+    Name = "${var.environment}-database-sg"
   }
 }
 
@@ -219,7 +209,7 @@ resource "tls_private_key" "rsa" {
 # Define the local file resource and Store the Private key in local
 resource "local_file" "terra_chatapp_local" {
   content  = tls_private_key.rsa.private_key_pem
-  filename = "${path.module}/terra-chatapp-key.pem"
+  filename = "${path.module}/${var.environment}-chatapp-key.pem"
 
   provisioner "local-exec" {
     command = "cmd.exe /C ${path.module}\\change_permissions.cmd"
@@ -228,7 +218,7 @@ resource "local_file" "terra_chatapp_local" {
 
 # Define the key pair resource
 resource "aws_key_pair" "terra_chatapp_key" {
-  key_name   = "terra-chatapp-key"
+  key_name   = "${var.environment}-chatapp-key"
   public_key = tls_private_key.rsa.public_key_openssh
 
 }
@@ -243,7 +233,7 @@ resource "aws_instance" "frontend" {
   associate_public_ip_address = true
 
   tags = {
-    Name = "terra-frontend-server"
+    Name = "${var.environment}-frontend-server"
   }
 
   connection {
@@ -256,8 +246,8 @@ resource "aws_instance" "frontend" {
   }
 
   provisioner "file" {
-    source      = "${path.module}/terra-chatapp-key.pem"
-    destination = "/home/ubuntu/terra-chatapp-key.pem"
+    source      = "${path.module}/${var.environment}-chatapp-key.pem"
+    destination = "/home/ubuntu/${var.environment}-chatapp-key.pem"
   }
 
 
@@ -278,7 +268,7 @@ resource "aws_instance" "frontend" {
 
   provisioner "remote-exec" {
     inline = [
-      "sudo chmod 400 /home/ubuntu/terra-chatapp-key.pem"
+      "sudo chmod 400 /home/ubuntu/${var.environment}-chatapp-key.pem"
     ]
   }
 
@@ -298,7 +288,7 @@ resource "aws_instance" "backend" {
   associate_public_ip_address = false
 
   tags = {
-    Name = "terra-backend-server"
+    Name = "${var.environment}-backend-server"
   }
 }
 
@@ -312,7 +302,7 @@ resource "aws_instance" "database" {
   associate_public_ip_address = false
 
   tags = {
-    Name = "terra-database-server"
+    Name = "${var.environment}-database-server"
   }
 
   depends_on = [
@@ -339,14 +329,14 @@ resource "null_resource" "configure_database" {
 
   provisioner "remote-exec" {
     inline = [
-      "ssh -o StrictHostKeyChecking=no -i /home/ubuntu/terra-chatapp-key.pem ubuntu@${aws_instance.database.private_ip} 'sudo apt-get update'",
-      "ssh -o StrictHostKeyChecking=no -i /home/ubuntu/terra-chatapp-key.pem ubuntu@${aws_instance.database.private_ip} 'sudo apt-get install mysql-server -y'"
+      "ssh -o StrictHostKeyChecking=no -i /home/ubuntu/${var.environment}-chatapp-key.pem ubuntu@${aws_instance.database.private_ip} 'sudo apt-get update'",
+      "ssh -o StrictHostKeyChecking=no -i /home/ubuntu/${var.environment}-chatapp-key.pem ubuntu@${aws_instance.database.private_ip} 'sudo apt-get install mysql-server -y'"
     ]
   }
 
   provisioner "remote-exec" {
     inline = [
-      "ssh -o StrictHostKeyChecking=no -i /home/ubuntu/terra-chatapp-key.pem ubuntu@${aws_instance.database.private_ip} 'sudo mysql_secure_installation <<< $'\\''n\\ny\\ny\\ny\\ny\\n'\\'''"
+      "ssh -o StrictHostKeyChecking=no -i /home/ubuntu/${var.environment}-chatapp-key.pem ubuntu@${aws_instance.database.private_ip} 'sudo mysql_secure_installation <<< $'\\''n\\ny\\ny\\ny\\ny\\n'\\'''"
     ]
   }
 
@@ -361,15 +351,15 @@ resource "null_resource" "configure_database" {
 
   provisioner "remote-exec" {
     inline = [
-      "ssh -o StrictHostKeyChecking=no -i /home/ubuntu/terra-chatapp-key.pem ubuntu@${aws_instance.database.private_ip} \"sudo mysql -e \\\"CREATE DATABASE IF NOT EXISTS chatapp; CREATE USER IF NOT EXISTS 'chatapp' IDENTIFIED BY 'J.YqwX83zz'; GRANT ALL PRIVILEGES ON chatapp.* TO 'chatapp'@'%'; FLUSH PRIVILEGES;\\\"\""
+      "ssh -o StrictHostKeyChecking=no -i /home/ubuntu/${var.environment}-chatapp-key.pem ubuntu@${aws_instance.database.private_ip} \"sudo mysql -e \\\"CREATE DATABASE IF NOT EXISTS chatapp; CREATE USER IF NOT EXISTS 'chatapp' IDENTIFIED BY 'J.YqwX83zz'; GRANT ALL PRIVILEGES ON chatapp.* TO 'chatapp'@'%'; FLUSH PRIVILEGES;\\\"\""
     ]
   }
 
   provisioner "remote-exec" {
     inline = [
-      "ssh -o StrictHostKeyChecking=no -i /home/ubuntu/terra-chatapp-key.pem ubuntu@${aws_instance.database.private_ip} 'sudo sed -i \"s/^bind-address\\\\s*=\\\\s*127.0.0.1/bind-address = 0.0.0.0/\" /etc/mysql/mysql.conf.d/mysqld.cnf'",
-      "ssh -o StrictHostKeyChecking=no -i /home/ubuntu/terra-chatapp-key.pem ubuntu@${aws_instance.database.private_ip} 'sudo sed -i \"s/^mysqlx-bind-address\\\\s*=\\\\s*127.0.0.1/mysqlx-bind-address = 0.0.0.0/\" /etc/mysql/mysql.conf.d/mysqld.cnf'",
-      "ssh -o StrictHostKeyChecking=no -i /home/ubuntu/terra-chatapp-key.pem ubuntu@${aws_instance.database.private_ip} 'sudo systemctl restart mysql'"
+      "ssh -o StrictHostKeyChecking=no -i /home/ubuntu/${var.environment}-chatapp-key.pem ubuntu@${aws_instance.database.private_ip} 'sudo sed -i \"s/^bind-address\\\\s*=\\\\s*127.0.0.1/bind-address = 0.0.0.0/\" /etc/mysql/mysql.conf.d/mysqld.cnf'",
+      "ssh -o StrictHostKeyChecking=no -i /home/ubuntu/${var.environment}-chatapp-key.pem ubuntu@${aws_instance.database.private_ip} 'sudo sed -i \"s/^mysqlx-bind-address\\\\s*=\\\\s*127.0.0.1/mysqlx-bind-address = 0.0.0.0/\" /etc/mysql/mysql.conf.d/mysqld.cnf'",
+      "ssh -o StrictHostKeyChecking=no -i /home/ubuntu/${var.environment}-chatapp-key.pem ubuntu@${aws_instance.database.private_ip} 'sudo systemctl restart mysql'"
     ]
   }
 }
@@ -390,20 +380,20 @@ resource "null_resource" "configure_backend" {
 
   provisioner "remote-exec" {
     inline = [
-      "scp -o StrictHostKeyChecking=no -i /home/ubuntu/terra-chatapp-key.pem /home/ubuntu/chatapp.service ubuntu@${aws_instance.backend.private_ip}:/home/ubuntu/chatapp.service",
-      "ssh -o StrictHostKeyChecking=no -i /home/ubuntu/terra-chatapp-key.pem ubuntu@${aws_instance.backend.private_ip} 'sudo apt-get update'",
-      "ssh -o StrictHostKeyChecking=no -i /home/ubuntu/terra-chatapp-key.pem ubuntu@${aws_instance.backend.private_ip} 'sudo apt-get install python3 python3-pip python3-dev default-libmysqlclient-dev build-essential -y'",
-      "ssh -o StrictHostKeyChecking=no -i /home/ubuntu/terra-chatapp-key.pem ubuntu@${aws_instance.backend.private_ip} 'cd /home/ubuntu && git clone https://github.com/Akshay444Kumar/chatapp.git app'",
-      "ssh -o StrictHostKeyChecking=no -i /home/ubuntu/terra-chatapp-key.pem ubuntu@${aws_instance.backend.private_ip} 'cd /home/ubuntu/app && pip3 install virtualenv'",
-      "ssh -o StrictHostKeyChecking=no -i /home/ubuntu/terra-chatapp-key.pem ubuntu@${aws_instance.backend.private_ip} 'cd /home/ubuntu/app && /home/ubuntu/.local/bin/virtualenv -p /usr/bin/python3 venv'",
-      "ssh -o StrictHostKeyChecking=no -i /home/ubuntu/terra-chatapp-key.pem ubuntu@${aws_instance.backend.private_ip} 'cd /home/ubuntu/app && source venv/bin/activate && pip3 install -r requirements.txt && pip3 install mysqlclient'",
-      "ssh -o StrictHostKeyChecking=no -i /home/ubuntu/terra-chatapp-key.pem ubuntu@${aws_instance.backend.private_ip} \"sudo sed -i 's/CHATDB/chatapp/g' /home/ubuntu/app/fundoo/fundoo/settings.py\"",
-      "ssh -o StrictHostKeyChecking=no -i /home/ubuntu/terra-chatapp-key.pem ubuntu@${aws_instance.backend.private_ip} \"sudo sed -i 's/CHATUSER/chatapp/g' /home/ubuntu/app/fundoo/fundoo/settings.py\"",
-      "ssh -o StrictHostKeyChecking=no -i /home/ubuntu/terra-chatapp-key.pem ubuntu@${aws_instance.backend.private_ip} \"sudo sed -i 's/CHATPASSWORD/J.YqwX83zz/g' /home/ubuntu/app/fundoo/fundoo/settings.py\"",
-      "ssh -o StrictHostKeyChecking=no -i /home/ubuntu/terra-chatapp-key.pem ubuntu@${aws_instance.backend.private_ip} \"sudo sed -i 's/CHATHOST/${aws_instance.database.private_ip}/g' /home/ubuntu/app/fundoo/fundoo/settings.py\"",
-      "ssh -o StrictHostKeyChecking=no -i /home/ubuntu/terra-chatapp-key.pem ubuntu@${aws_instance.backend.private_ip} 'cd /home/ubuntu/app && source venv/bin/activate && python3 fundoo/manage.py makemigrations && python3 fundoo/manage.py migrate'",
-      "ssh -o StrictHostKeyChecking=no -i /home/ubuntu/terra-chatapp-key.pem ubuntu@${aws_instance.backend.private_ip} 'sudo mv /home/ubuntu/chatapp.service /lib/systemd/system/chatapp.service && sudo chown root. /lib/systemd/system/chatapp.service'",
-      "ssh -o StrictHostKeyChecking=no -i /home/ubuntu/terra-chatapp-key.pem ubuntu@${aws_instance.backend.private_ip} 'sudo systemctl daemon-reload && sudo systemctl enable chatapp.service && sudo systemctl start chatapp.service'"
+      "scp -o StrictHostKeyChecking=no -i /home/ubuntu/${var.environment}-chatapp-key.pem /home/ubuntu/chatapp.service ubuntu@${aws_instance.backend.private_ip}:/home/ubuntu/chatapp.service",
+      "ssh -o StrictHostKeyChecking=no -i /home/ubuntu/${var.environment}-chatapp-key.pem ubuntu@${aws_instance.backend.private_ip} 'sudo apt-get update'",
+      "ssh -o StrictHostKeyChecking=no -i /home/ubuntu/${var.environment}-chatapp-key.pem ubuntu@${aws_instance.backend.private_ip} 'sudo apt-get install python3 python3-pip python3-dev default-libmysqlclient-dev build-essential -y'",
+      "ssh -o StrictHostKeyChecking=no -i /home/ubuntu/${var.environment}-chatapp-key.pem ubuntu@${aws_instance.backend.private_ip} 'cd /home/ubuntu && git clone https://github.com/Akshay444Kumar/chatapp.git app'",
+      "ssh -o StrictHostKeyChecking=no -i /home/ubuntu/${var.environment}-chatapp-key.pem ubuntu@${aws_instance.backend.private_ip} 'cd /home/ubuntu/app && pip3 install virtualenv'",
+      "ssh -o StrictHostKeyChecking=no -i /home/ubuntu/${var.environment}-chatapp-key.pem ubuntu@${aws_instance.backend.private_ip} 'cd /home/ubuntu/app && /home/ubuntu/.local/bin/virtualenv -p /usr/bin/python3 venv'",
+      "ssh -o StrictHostKeyChecking=no -i /home/ubuntu/${var.environment}-chatapp-key.pem ubuntu@${aws_instance.backend.private_ip} 'cd /home/ubuntu/app && source venv/bin/activate && pip3 install -r requirements.txt && pip3 install mysqlclient'",
+      "ssh -o StrictHostKeyChecking=no -i /home/ubuntu/${var.environment}-chatapp-key.pem ubuntu@${aws_instance.backend.private_ip} \"sudo sed -i 's/CHATDB/chatapp/g' /home/ubuntu/app/fundoo/fundoo/settings.py\"",
+      "ssh -o StrictHostKeyChecking=no -i /home/ubuntu/${var.environment}-chatapp-key.pem ubuntu@${aws_instance.backend.private_ip} \"sudo sed -i 's/CHATUSER/chatapp/g' /home/ubuntu/app/fundoo/fundoo/settings.py\"",
+      "ssh -o StrictHostKeyChecking=no -i /home/ubuntu/${var.environment}-chatapp-key.pem ubuntu@${aws_instance.backend.private_ip} \"sudo sed -i 's/CHATPASSWORD/J.YqwX83zz/g' /home/ubuntu/app/fundoo/fundoo/settings.py\"",
+      "ssh -o StrictHostKeyChecking=no -i /home/ubuntu/${var.environment}-chatapp-key.pem ubuntu@${aws_instance.backend.private_ip} \"sudo sed -i 's/CHATHOST/${aws_instance.database.private_ip}/g' /home/ubuntu/app/fundoo/fundoo/settings.py\"",
+      "ssh -o StrictHostKeyChecking=no -i /home/ubuntu/${var.environment}-chatapp-key.pem ubuntu@${aws_instance.backend.private_ip} 'cd /home/ubuntu/app && source venv/bin/activate && python3 fundoo/manage.py makemigrations && python3 fundoo/manage.py migrate'",
+      "ssh -o StrictHostKeyChecking=no -i /home/ubuntu/${var.environment}-chatapp-key.pem ubuntu@${aws_instance.backend.private_ip} 'sudo mv /home/ubuntu/chatapp.service /lib/systemd/system/chatapp.service && sudo chown root. /lib/systemd/system/chatapp.service'",
+      "ssh -o StrictHostKeyChecking=no -i /home/ubuntu/${var.environment}-chatapp-key.pem ubuntu@${aws_instance.backend.private_ip} 'sudo systemctl daemon-reload && sudo systemctl enable chatapp.service && sudo systemctl start chatapp.service'"
     ] 
   }
 }
